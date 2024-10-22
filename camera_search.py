@@ -112,6 +112,56 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Local Service not found.")
 
+    def do_POST(self):
+        if self.path == "/camera_control":
+            content_length = int(self.headers["Content-Length"])
+            post_data = self.rfile.read(content_length)
+            try:
+                # Parse the JSON data sent from the client
+                data = json.loads(post_data.decode("utf-8"))
+                action_list_url = data.get("action_list_url")
+                payload = data.get("payload")
+
+                if not action_list_url or not payload:
+                    self.send_response(400)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    response = {"error": "Invalid request data."}
+                    self.wfile.write(json.dumps(response).encode("utf-8"))
+                    return
+
+                # Forward the request to the camera
+                camera_response = requests.post(action_list_url, json=payload)
+                camera_response_data = camera_response.json()
+
+                # Send the camera's response back to the client
+                self.send_response(camera_response.status_code)
+                self.send_header("Content-type", "application/json")
+                # CORS header to allow cross-origin requests
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps(camera_response_data).encode("utf-8"))
+
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                response = {"error": "Internal server error.", "details": str(e)}
+                self.wfile.write(json.dumps(response).encode("utf-8"))
+        else:
+            self.send_error(404, "Local Service not found.")
+
+    # Browser sends an OPTIONS request to the local server before the actual POST request -> handle the preflight request and return the necessary CORS headers.
+    def do_OPTIONS(self):
+        if self.path == "/camera_control":
+            self.send_response(200, "OK")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+        else:
+            self.send_error(404, "Local Service not found.")
+
 
 def run_server():
     server_address = ("", 8001)  # Listen on all interfaces on port 8001
