@@ -35,8 +35,12 @@ class SSDPSearch:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
 
         # Best to bind device IP directly ensures SSDP sends request through correct inteface
-        local_ip = "192.168.122.177"
-        sock.bind((local_ip, 0))
+        # local_ip = "192.168.122.177"
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+
+        # sock.bind((local_ip, 0))
+        sock.bind(('192.168.122.124', 0))
 
         # Send M-SEARCH requests multiple times to increase probability that camera reponses
         for i in range(5):
