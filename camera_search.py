@@ -7,7 +7,7 @@ import json
 import threading
 from typing import Any
 from urllib.parse import urlparse
-
+from helper_functions import convert_params
 
 class SSDPSearch:
     def retrieve_device_descriptions(self) -> Any:
@@ -24,7 +24,7 @@ class SSDPSearch:
             b"ST: urn:schemas-sony-com:service:ScalarWebAPI:1\r\n"
             b"USER-AGENT: Django/5.0 Python/3.x\r\n\r\n"
         )
-
+        
         # Create socket for sending and receiving UDP packets over IPv4, necessary for SSDP
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         # Allow socket to reuse the address and set socket options
@@ -220,6 +220,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # This is the actual json object required for the api request to the camera
                 payload = data.get("payload")
                 action = data.get("action")
+                
+                payload["params"] = convert_params(payload["params"])
 
                 if not action_list_url or not payload:
                     response = {"error": "Invalid request data."}
@@ -231,7 +233,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 camera_response_data = camera_response.json()
 
                 # If liveview stream is requested
-                if action == "startLiveview":
+                if action == "startLiveview" or action == "startLiveviewWithSize":
                     liveview_urls = camera_response_data.get("result", [])
                     if liveview_urls:
                         # Extract the liveview url from the camera response
