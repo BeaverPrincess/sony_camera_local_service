@@ -7,7 +7,8 @@ import json
 import threading
 from typing import Any
 from urllib.parse import urlparse
-from helper_functions import convert_params
+from helper_functions import convert_params, split_param
+
 
 class SSDPSearch:
     def retrieve_device_descriptions(self) -> Any:
@@ -24,7 +25,7 @@ class SSDPSearch:
             b"ST: urn:schemas-sony-com:service:ScalarWebAPI:1\r\n"
             b"USER-AGENT: Django/5.0 Python/3.x\r\n\r\n"
         )
-        
+
         # Create socket for sending and receiving UDP packets over IPv4, necessary for SSDP
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         # Allow socket to reuse the address and set socket options
@@ -40,7 +41,7 @@ class SSDPSearch:
         local_ip = socket.gethostbyname(hostname)
 
         # sock.bind((local_ip, 0))
-        sock.bind(('192.168.122.124', 0))
+        sock.bind(("192.168.122.124", 0))
 
         # Send M-SEARCH requests multiple times to increase probability that camera reponses
         for i in range(5):
@@ -220,8 +221,19 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # This is the actual json object required for the api request to the camera
                 payload = data.get("payload")
                 action = data.get("action")
-                
-                payload["params"] = convert_params(payload["params"])
+
+                # if no param needed -> empty string
+                if not payload["params"]:
+                    payload["params"] = []
+                else:
+                    params = payload["params"]
+                    splited_params = split_param(params)
+                    if isinstance(splited_params, list):
+                        for param in splited_params:
+                            param = convert_params(param)
+                        payload["params"] = splited_params
+                    else:
+                        payload["params"] = [convert_params(splited_params)]
 
                 if not action_list_url or not payload:
                     response = {"error": "Invalid request data."}
