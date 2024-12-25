@@ -1,8 +1,7 @@
 import socket
-from typing import Optional
 import time
 import requests
-from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
 from typing import Any
@@ -36,9 +35,11 @@ class SSDPSearch:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
 
         # Best to bind device IP directly ensures SSDP sends request through correct inteface
+
+        ### TO-DO: Dynamicalize this!
         # local_ip = "192.168.122.177"
-        hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
+        # hostname = socket.gethostname()
+        # local_ip = socket.gethostbyname(hostname)
 
         # sock.bind((local_ip, 0))
         sock.bind(("192.168.122.124", 0))
@@ -232,6 +233,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                         for param in splited_params:
                             param = convert_params(param)
                         payload["params"] = splited_params
+                    elif action == "setIsoSpeedRate":
+                        payload["params"] = [splited_params]
                     else:
                         payload["params"] = [convert_params(splited_params)]
 
