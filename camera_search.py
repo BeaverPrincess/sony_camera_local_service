@@ -6,7 +6,6 @@ import json
 import threading
 from typing import Any
 from urllib.parse import urlparse
-from helper_functions import convert_params, split_param
 
 
 class SSDPSearch:
@@ -222,22 +221,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # This is the actual json object required for the api request to the camera
                 payload = data.get("payload")
                 action = data.get("action")
-
-                # if no param needed -> empty string
-                if not payload["params"]:
-                    payload["params"] = []
-                else:
-                    params = payload["params"]
-                    splited_params = split_param(params)
-                    if isinstance(splited_params, list):
-                        splited_params = [
-                            convert_params(param) for param in splited_params
-                        ]
-                        payload["params"] = splited_params
-                    elif action == "setIsoSpeedRate":
-                        payload["params"] = [splited_params]
-                    else:
-                        payload["params"] = [convert_params(splited_params)]
 
                 if not action_list_url or not payload:
                     response = {"error": "Invalid request data."}
