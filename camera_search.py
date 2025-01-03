@@ -230,8 +230,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     params = payload["params"]
                     splited_params = split_param(params)
                     if isinstance(splited_params, list):
-                        for param in splited_params:
-                            param = convert_params(param)
+                        splited_params = [
+                            convert_params(param) for param in splited_params
+                        ]
                         payload["params"] = splited_params
                     elif action == "setIsoSpeedRate":
                         payload["params"] = [splited_params]
