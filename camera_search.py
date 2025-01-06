@@ -6,9 +6,17 @@ import json
 import threading
 from typing import Any
 from urllib.parse import urlparse
+import psutil
 
 
 class SSDPSearch:
+    """
+    This class handles all the functions and logic to look for and set up initial communication with the camera.
+    """
+
+    SSDP_MULTICAST_IP = "239.255.255.250"
+    SSDP_MULTICAST_PORT = 1900
+
     def retrieve_device_descriptions(self) -> Any:
         """
         Get location URL using SSDP M-Search.
@@ -16,13 +24,15 @@ class SSDPSearch:
         print("Fetching camera infos...")
         # SSDP M-SEARCH request to discover the camera
         M_SEARCH = (
-            b"M-SEARCH * HTTP/1.1\r\n"
-            b"HOST: 239.255.255.250:1900\r\n"
-            b'MAN: "ssdp:discover"\r\n'
-            b"MX: 1\r\n"
-            b"ST: urn:schemas-sony-com:service:ScalarWebAPI:1\r\n"
-            b"USER-AGENT: Django/5.0 Python/3.x\r\n\r\n"
-        )
+            f"M-SEARCH * HTTP/1.1\r\n"
+            f"HOST: {self.SSDP_MULTICAST_IP}:{self.SSDP_MULTICAST_PORT}\r\n"
+            'MAN: "ssdp:discover"\r\n'
+            "MX: 1\r\n"
+            "ST: urn:schemas-sony-com:service:ScalarWebAPI:1\r\n"
+            "USER-AGENT: Django/5.0 Python/3.x\r\n\r\n"
+        ).encode(
+            "utf-8"
+        )  # Convert to a byte string
 
         # Create socket for sending and receiving UDP packets over IPv4, necessary for SSDP
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -34,18 +44,13 @@ class SSDPSearch:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
 
         # Best to bind device IP directly ensures SSDP sends request through correct inteface
-
-        ### TO-DO: Dynamicalize this!
-        # local_ip = "192.168.122.177"
-        # hostname = socket.gethostname()
-        # local_ip = socket.gethostbyname(hostname)
-
-        # sock.bind((local_ip, 0))
-        sock.bind(("192.168.122.124", 0))
+        ip = "192.168.122.124"
+        ip = self._get_assigned_ip()
+        sock.bind((ip, 0))
 
         # Send M-SEARCH requests multiple times to increase probability that camera reponses
         for i in range(5):
-            sock.sendto(M_SEARCH, ("239.255.255.250", 1900))
+            sock.sendto(M_SEARCH, (self.SSDP_MULTICAST_IP, self.SSDP_MULTICAST_PORT))
             time.sleep(1)
 
         location_url = None
@@ -61,7 +66,7 @@ class SSDPSearch:
                     break
                 sock.settimeout(remaining)
                 try:
-                    data, addr = sock.recvfrom(1024)
+                    data, _ = sock.recvfrom(1024)
                     response_str = data.decode("utf-8")
                     # Parse the response to get the LOCATION URL
                     for line in response_str.splitlines():
@@ -88,8 +93,25 @@ class SSDPSearch:
             print("XML content fetched successfully!")
             return xml_content
 
+    def _get_assigned_ip(self) -> str:
+        """The assigned IP adress to the computer is needed in order to communicate with the Camera using SSDP M-Search"""
+        try:
+            # Iterate through all network interfaces
+            for _, addresses in psutil.net_if_addrs().items():
+                for address in addresses:
+                    if address.family == socket.AF_INET:  # IPv4 address
+                        ip = address.address
+                        # Ignore loopback addresses and self assigned IPs
+                        if not ip.startswith("127.") and not ip.startswith("169.254."):
+                            return ip
+            return None
 
-class RequestHandler(BaseHTTPRequestHandler):
+        except Exception as e:
+            print(f"Error occurred at fethcing assigned IP: {e}")
+            return None
+
+
+class BrowserCommunicationHandler(BaseHTTPRequestHandler):
     liveview_url = None
 
     def _set_headers(self, status_code=200, content_type="application/json"):
@@ -185,7 +207,6 @@ class RequestHandler(BaseHTTPRequestHandler):
             # Perform SSDP discovery
             searcher = SSDPSearch()
             device_description = searcher.retrieve_device_descriptions()
-            print(device_description)
             if device_description is None:
                 response = {"error": "Device description fetching failed."}
             else:
@@ -196,13 +217,13 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         # For request for liveview streaming
         elif path == "/liveview":
-            if not RequestHandler.liveview_url:
+            if not BrowserCommunicationHandler.liveview_url:
                 response = {"error": "Live view URL not set. Start live view first."}
                 self._send_json_response(response, status_code=400)
                 print("Live view URL not set. Cannot start streaming.")
                 return
 
-            self._handle_liveview_stream(RequestHandler.liveview_url)
+            self._handle_liveview_stream(BrowserCommunicationHandler.liveview_url)
         else:
             self.send_error(404, "Local Service not found.")
 
@@ -236,8 +257,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     liveview_urls = camera_response_data.get("result", [])
                     if liveview_urls:
                         # Extract the liveview url from the camera response
-                        RequestHandler.liveview_url = liveview_urls[0]
-                        print(f"Live view URL: {RequestHandler.liveview_url}")
+                        BrowserCommunicationHandler.liveview_url = liveview_urls[0]
+                        print(
+                            f"Live view URL: {BrowserCommunicationHandler.liveview_url}"
+                        )
                     else:
                         print("No live view URL found in the response.")
                 # Notify the client browser with the camera status (should be success)
@@ -266,7 +289,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 def run_server():
     server_address = ("", 8001)
-    httpd = ThreadingHTTPServer(server_address, RequestHandler)
+    httpd = ThreadingHTTPServer(server_address, BrowserCommunicationHandler)
     print("Local service running on port 8001...")
     httpd.serve_forever()
 
