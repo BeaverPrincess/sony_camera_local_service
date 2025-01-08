@@ -34,78 +34,83 @@ class SSDPSearch:
             "utf-8"
         )  # Convert to a byte string
 
-        # Create socket for sending and receiving UDP packets over IPv4, necessary for SSDP
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        # Allow socket to reuse the address and set socket options
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # Allows multiple sockets to bind to the same address and port -> in case OS hasnt closed the socket zb. from previous run
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        # Extend to Broadcast by inceasing buffer size
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        # Best to bind device IP directly to ensure SSDP sends request through correct inteface
+        ips = self._get_assigned_ip()
 
-        # Best to bind device IP directly ensures SSDP sends request through correct inteface
-        ip = "192.168.122.124"
-        ip = self._get_assigned_ip()
-        sock.bind((ip, 0))
+        for ip in ips:
+            # Create socket for sending and receiving UDP packets over IPv4, necessary for SSDP
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            # Allow socket to reuse the address and set socket options
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Allows multiple sockets to bind to the same address and port -> in case OS hasnt closed the socket zb. from previous run
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            # Extend to Broadcast by inceasing buffer size
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+            sock.bind((ip, 0))
 
-        # Send M-SEARCH requests multiple times to increase probability that camera reponses
-        for i in range(5):
-            sock.sendto(M_SEARCH, (self.SSDP_MULTICAST_IP, self.SSDP_MULTICAST_PORT))
-            time.sleep(1)
+            # Send M-SEARCH requests multiple times to increase probability that camera reponses
+            for i in range(5):
+                sock.sendto(
+                    M_SEARCH, (self.SSDP_MULTICAST_IP, self.SSDP_MULTICAST_PORT)
+                )
+                time.sleep(1)
 
-        location_url = None
-        start_time = time.time()
-        timeout = 8  # Total timeout in seconds
-        # Set a dynamic socket timeout to ensure that waiting for a response only takes exactly that long
-        try:
-            while True:
-                # Calculate remaining time
-                elapsed = time.time() - start_time
-                remaining = timeout - elapsed
-                if remaining <= 0:
-                    break
-                sock.settimeout(remaining)
-                try:
-                    data, _ = sock.recvfrom(1024)
-                    response_str = data.decode("utf-8")
-                    # Parse the response to get the LOCATION URL
-                    for line in response_str.splitlines():
-                        if line.startswith("LOCATION"):
-                            location_url = line.split(" ", 1)[1]
-                            break
-                    if location_url:
-                        break  # Exit loop if LOCATION URL is found
-                except socket.timeout:
-                    continue  # No data received, continue waiting
-        except Exception as e:
-            print(f"Error: Failed to fetch location URL.\n{str(e)}")
-            return None
-        finally:
-            sock.close()
+            location_url = None
+            start_time = time.time()
+            timeout = 8  # Total timeout in seconds
+            # Set a dynamic socket timeout to ensure that waiting for a response only takes exactly that long
+            try:
+                while True:
+                    # Calculate remaining time
+                    elapsed = time.time() - start_time
+                    remaining = timeout - elapsed
+                    if remaining <= 0:
+                        break
+                    sock.settimeout(remaining)
+                    try:
+                        data, _ = sock.recvfrom(1024)
+                        response_str = data.decode("utf-8")
 
-        if not location_url:
-            print("Error: Location URL not found in SSDP response.")
-            return None
+                        # Parse the response to get the LOCATION URL
+                        for line in response_str.splitlines():
+                            if line.startswith("LOCATION"):
+                                location_url = line.split(" ", 1)[1]
+                                break
+                        if location_url:
+                            break  # Exit loop if LOCATION URL is found
+                    except socket.timeout:
+                        continue  # No data received, continue waiting
+            except Exception as e:
+                print(f"Error: Failed to fetch location URL.\n{str(e)}")
+                return None
+            finally:
+                sock.close()
 
-        response = requests.get(location_url)
-        if response.status_code == 200:
-            xml_content = response.content
-            print("XML content fetched successfully!")
-            return xml_content
+            if not location_url:
+                continue
 
-    def _get_assigned_ip(self) -> str:
+            response = requests.get(location_url)
+            if response.status_code == 200:
+                xml_content = response.content
+                print("XML content fetched successfully!")
+                return xml_content
+
+        print("Could not find a valid IP to connect with the camera.")
+        return None
+
+    def _get_assigned_ip(self) -> list[str]:
         """The assigned IP adress to the computer is needed in order to communicate with the Camera using SSDP M-Search"""
         try:
             # Iterate through all network interfaces
+            ips = []
             for _, addresses in psutil.net_if_addrs().items():
                 for address in addresses:
                     if address.family == socket.AF_INET:  # IPv4 address
                         ip = address.address
                         # Ignore loopback addresses and self assigned IPs
                         if not ip.startswith("127.") and not ip.startswith("169.254."):
-                            return ip
-            return None
-
+                            ips.append(ip)
+            return ips
         except Exception as e:
             print(f"Error occurred at fethcing assigned IP: {e}")
             return None
