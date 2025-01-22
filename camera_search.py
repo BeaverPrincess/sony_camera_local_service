@@ -279,17 +279,17 @@ class BrowserCommunicationHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Local Service not found.")
 
-    # Browser sends an OPTIONS request to the local server before the actual POST request
     # -> handle the preflight request and return the necessary CORS headers.
     def do_OPTIONS(self):
-        if self.path == "/camera_control":
+        origin = self.headers.get("Origin")
+        if origin and origin.startswith("http://127.0.0.1:8000"):
             self.send_response(200, "OK")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
         else:
-            self.send_error(404, "Local Service not found.")
+            self.send_error(403, "Forbidden Origin")
 
 
 def run_server():
